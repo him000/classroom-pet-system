@@ -164,18 +164,13 @@ const Store = {
     });
   },
 
-  // ---- 添加积分（本地先更新，已由服务器任务审核时同步）----
+  // ---- 添加积分（积分与宠物经验完全解耦，积分不再转化为宠物经验）----
   addPoints(studentId, pts, reason, icon) {
     const student = this.state.students.find(s => s.id === studentId);
     if (!student) return { levelUp: false };
-    const oldStage = student.petStage;
     student.points = (student.points || 0) + pts;
     this._logPoints(student, pts, reason, icon);
-    if (student.petType) {
-      student.petExp   = (student.petExp || 0) + Math.round(pts * 0.5);
-      student.petStage = getLevelInfo(student.petExp).level;
-      if (student.petStage > oldStage) return { levelUp: true, newStage: student.petStage };
-    }
+    // 积分不再给宠物加经验，经验只通过喂食/洗澡/玩耍等护理行为获得
     return { levelUp: false };
   },
 
@@ -196,6 +191,24 @@ const Store = {
     const item = ITEMS.find(i => i.id === itemId);
     if (!item) return { success: false, msg: '道具不存在' };
 
+    // ===== 新增：状态满值检查（达到100时禁止使用对应道具）=====
+    if (!student.petDead) {
+      const status = student.petStatus || {};
+      if (item.type === 'food' && (status.hungry || 0) >= 100) {
+        return { success: false, msg: '宠物已经吃饱了！饱食度满值时不能再喂食 🍗' };
+      }
+      if (item.type === 'clean' && (status.clean || 0) >= 100) {
+        return { success: false, msg: '宠物已经很干净了！清洁度满值时不需要洗澡 🛁' };
+      }
+      if (item.type === 'toy' && (status.happy || 0) >= 100) {
+        return { success: false, msg: '宠物心情满溢了！心情值满值时不需要再玩耍 😊' };
+      }
+      if (item.type === 'heal' && (status.health || 0) >= 100) {
+        return { success: false, msg: '宠物身体很健康！生命值满值时不需要治疗 ❤️' };
+      }
+    }
+    // ===== 结束状态满值检查 =====
+
     const res = await apiPost('students.php', {
       action:   'useItem',
       id:       studentId,
@@ -211,7 +224,9 @@ const Store = {
       if (res.petStage !== undefined) student.petStage = res.petStage;
       if (res.hatched)    { student.petDead = false; student.petHatchProgress = 0; }
       this.state.students = [...this.state.students];
-      return { success: true, levelUp: res.levelUp, newStage: res.newStage, hatched: res.hatched, hatchProgress: res.hatchProgress, item };
+      // 如果服务器返回今日经验已达上限，附加提示
+      const expMsg = res.dailyExpFull ? '（今日经验已达上限，明天再来喂食吧！）' : '';
+      return { success: true, levelUp: res.levelUp, newStage: res.newStage, hatched: res.hatched, hatchProgress: res.hatchProgress, item, expMsg };
     }
     return { success: false, msg: res.msg };
   },
@@ -284,17 +299,16 @@ const Store = {
         }
         this.state.tasks = [...this.state.tasks];
       }
-      // 本地同步学生积分
+      // 本地同步学生积分（任务审核只给积分，不给宠物经验）
       if (approved) {
         const student = this.state.students.find(s => s.id === studentId);
         if (student && res.newPoints !== undefined) {
           student.points   = res.newPoints;
-          student.petExp   = res.newPetExp;
-          student.petStage = res.newPetStage;
+          // 注意：宠物经验不再由任务积分驱动，服务器端也应保持一致
           student._lastGrantReason = `完成任务「${task?.title}」获得奖励`;
           this.state.students = [...this.state.students];
         }
-        return { levelUp: res.levelUp, newStage: res.newPetStage };
+        return { levelUp: false };
       }
       return true;
     }
@@ -425,25 +439,44 @@ const Store = {
     }, 3000);
   },
 
-  // ---- 宠物状态自然衰减 ----
+  // ---- 宠物状态自然衰减（由前端随机间隔调用，45~90分钟一次）----
+  // tick 规则（每次随机）：hungry -2~5/次, happy -1~3/次, clean -1~3/次
+  // hungry<30 或 clean<30 时 health -2~4/次（最低1）
   async tickPetStatus(studentId) {
     const res = await apiPost('students.php', { action: 'tick', id: studentId });
     if (res.success && !res.skipped) {
       const student = this.state.students.find(s => s.id === studentId);
       if (student) {
         if (res.petStatus) student.petStatus = res.petStatus;
-        if (res.died)      { student.petDead = true; student.points = 0; student.petStatus = { health:0, hungry:0, happy:0, clean:0 }; }
+        // tick 不会致死，只在 checkPenalty（7天不喂）时死亡
         this.state.students = [...this.state.students];
       }
+      // 状态较低时返回警告供 UI 展示
+      return { sick: res.sick };
     }
+    return null;
   },
 
-  // ---- 每日离线惩罚检测 ----
+  // ---- 离线惩罚检测（登录时触发）----
+  // 阶梯积分扣减：24h→-10, 48h→-30, 72h→-60, 96h→-100, 120h→-150, 144h→-200, 168h(7天)→死亡+清零
   async checkDailyPenalty(studentId) {
     const res = await apiPost('students.php', { action: 'checkPenalty', id: studentId });
-    if (res.success && !res.skipped && res.daysMissed) {
-      await this.refreshStudent(studentId);
-      return { daysMissed: res.daysMissed, expPenalty: res.expPenalty, hpPenalty: res.hpPenalty, died: res.died };
+    if (!res.success || res.skipped) return null;
+
+    // 无论有无惩罚都刷新本地学生数据（状态已在服务端更新）
+    await this.refreshStudent(studentId);
+
+    if (res.died) {
+      return { died: true, hoursMissed: res.hoursMissed, pointLost: res.pointLost };
+    }
+    if (res.hoursMissed >= 24) {
+      return {
+        died:         false,
+        hoursMissed:  res.hoursMissed,
+        daysMissed:   res.daysMissed,
+        pointPenalty: res.pointPenalty,
+        newPoints:    res.newPoints,
+      };
     }
     return null;
   },

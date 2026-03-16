@@ -27,6 +27,7 @@ const App = {
     onLoggedIn(result) {
       this.currentUser = result.user;
       this.authState   = result.role; // 'student' | 'teacher' | 'admin'
+      // 宠物衰减 tick 和离线惩罚检测已由 StudentApp.mounted() 统一处理
     },
     onLogout() {
       this.currentUser = null;

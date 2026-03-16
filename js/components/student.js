@@ -36,6 +36,9 @@ const PetPage = {
     expPercent() {
       return getExpPercent(this.student.petExp || 0);
     },
+    dailyExpLimit() {
+      return typeof DAILY_EXP_LIMIT !== 'undefined' ? DAILY_EXP_LIMIT : 50;
+    },
     statusBars() {
       const s = this.student.petStatus || {};
       return [
@@ -44,6 +47,22 @@ const PetPage = {
         { key: 'happy',  icon: '😊',  label: '心情', value: s.happy  || 0, cls: 'progress-happy'  },
         { key: 'clean',  icon: '🛁',  label: '清洁', value: s.clean  || 0, cls: 'progress-clean'  },
       ];
+    },
+    // 状态警告（低于阈值时显示提示）
+    statusWarnings() {
+      const s = this.student.petStatus || {};
+      const warnings = [];
+      const hungry = s.hungry || 0;
+      const clean  = s.clean  || 0;
+      const happy  = s.happy  || 0;
+      const health = s.health || 0;
+      if (health <= 30)  warnings.push({ key: 'health', icon: '🚨', msg: `生命值只剩 ${health}！快用急救药治疗宠物！`, urgent: true });
+      if (hungry <= 20)  warnings.push({ key: 'hungry', icon: '😭', msg: `宠物快饿坏了！饱食度只剩 ${hungry}，健康正在下降！`, urgent: true });
+      else if (hungry <= 40) warnings.push({ key: 'hungry', icon: '😟', msg: `宠物有点饿了（饱食度 ${hungry}），记得喂食哦~`, urgent: false });
+      if (clean <= 20)   warnings.push({ key: 'clean',  icon: '🧹', msg: `宠物太脏了！清洁度只剩 ${clean}，健康正在下降！`, urgent: true });
+      else if (clean <= 40)  warnings.push({ key: 'clean',  icon: '🛁', msg: `宠物有点脏了（清洁度 ${clean}），记得洗澡哦~`, urgent: false });
+      if (happy <= 20)   warnings.push({ key: 'happy',  icon: '😢', msg: `宠物心情很差（${happy}），陪它玩一玩吧！`, urgent: false });
+      return warnings;
     },
     backpackItems() {
       const bp = this.student.backpack || {};
@@ -55,8 +74,8 @@ const PetPage = {
     feedItems()  { return this.backpackItems.filter(i => i.type === 'food'); },
     cleanItems() { return this.backpackItems.filter(i => i.type === 'clean'); },
     toyItems()   { return this.backpackItems.filter(i => i.type === 'toy'); },
-    healItems()  { return this.backpackItems.filter(i => i.type === 'heal' || i.type === 'special'); },
-    shopItems() { return ITEMS; },
+    healItems()  { return this.backpackItems.filter(i => i.type === 'heal'); },
+    shopItems()  { return ITEMS.filter(i => i.type !== 'special'); },  // 商店不再出售经验类特殊道具
     // 积分明细：优先读 pointsLog，兜底从任务记录构建
     pointsHistory() {
       const student = Store.state.students.find(s => s.id === this.student.id);
@@ -140,13 +159,14 @@ const PetPage = {
         if (item.effect.health)  effectTexts.push(`生命+${item.effect.health}`);
         if (item.effect.happy)   effectTexts.push(`心情+${item.effect.happy}`);
         if (item.effect.clean)   effectTexts.push(`清洁+${item.effect.clean}`);
-        if (item.effect.exp)     effectTexts.push(`经验+${item.effect.exp}`);
         this.showBubbleMsg(`${item.emoji} ${effectTexts.join(' ')} ！`);
         this.$emit('update');
         if (result.levelUp) {
           this.$emit('level-up', result.newStage);
         } else {
-          this.$emit('toast', `使用了 ${item.emoji}${item.name}，${effectTexts.join(' ')}！`, 'success');
+          let toastMsg = `使用了 ${item.emoji}${item.name}，${effectTexts.join(' ')}！`;
+          if (result.expMsg) toastMsg += ' ' + result.expMsg;
+          this.$emit('toast', toastMsg, 'success');
         }
       } else {
         this.$emit('toast', result.msg, 'error');
@@ -230,6 +250,30 @@ const PetPage = {
           </div>
           <div class="progress-bar">
             <div class="progress-fill progress-exp" :style="{width: expPercent + '%'}"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);text-align:center;margin-top:4px;">
+            💡 每天喂食/洗澡/玩耍可获得经验，每日上限 {{ dailyExpLimit }} 点
+          </div>
+        </div>
+
+        <!-- 宠物状态警告横幅（活着时，有指标过低则显示） -->
+        <div v-if="!student.petDead && statusWarnings.length > 0"
+             style="width:100%;max-width:280px;margin-bottom:10px;">
+          <div v-for="w in statusWarnings" :key="w.key"
+               :style="{
+                 background: w.urgent ? '#FFF3E0' : '#FFFDE7',
+                 border: '1.5px solid ' + (w.urgent ? '#FF9800' : '#FFD54F'),
+                 borderRadius: '10px',
+                 padding: '7px 12px',
+                 fontSize: '12px',
+                 color: w.urgent ? '#E65100' : '#F57C00',
+                 marginBottom: '5px',
+                 display: 'flex',
+                 alignItems: 'center',
+                 gap: '6px'
+               }">
+            <span>{{ w.icon }}</span>
+            <span>{{ w.msg }}</span>
           </div>
         </div>
 
@@ -580,7 +624,7 @@ const TaskPage = {
             </button>
           </div>
           <div style="margin-top:10px;font-size:12px;color:var(--text-light);text-align:center;">
-            完成后获得 ⭐ {{ selectedTask.points }} 积分 → 宠物成长加速！
+            完成后获得 ⭐ {{ selectedTask.points }} 积分 → 购买道具喂养宠物！
           </div>
         </div>
       </div>
@@ -663,7 +707,7 @@ const TaskPage = {
               <span style="font-size:32px;">🎉</span>
               <div>
                 <div style="font-weight:800;color:#2E7D32;font-size:15px;">任务已通过！</div>
-                <div style="font-size:13px;color:#388E3C;margin-top:2px;">获得 +{{ detailTask.points }} 积分，宠物经验 +{{ Math.round(detailTask.points * 0.5) }}</div>
+                <div style="font-size:13px;color:#388E3C;margin-top:2px;">获得 +{{ detailTask.points }} 积分，用积分购买道具来喂养宠物！</div>
               </div>
             </div>
 
@@ -809,11 +853,13 @@ const BackpackPage = {
   computed: {
     allItems() {
       const bp = this.student.backpack || {};
-      return ITEMS.map(item => ({
-        ...item,
-        count: bp[item.id] || 0,
-        owned: (bp[item.id] || 0) > 0,
-      }));
+      return ITEMS
+        .filter(item => item.type !== 'special')   // 过滤掉已废弃的经验类特殊道具
+        .map(item => ({
+          ...item,
+          count: bp[item.id] || 0,
+          owned: (bp[item.id] || 0) > 0,
+        }));
     },
     filteredItems() {
       if (this.filterType === 'all') return this.allItems;
@@ -821,21 +867,22 @@ const BackpackPage = {
     },
     tabs() {
       return [
-        { k: 'all',     l: '全部', icon: '🎒' },
-        { k: 'food',    l: '食物', icon: '🍎' },
-        { k: 'clean',   l: '清洁', icon: '🛁' },
-        { k: 'toy',     l: '玩具', icon: '⚽' },
-        { k: 'heal',    l: '医疗', icon: '💊' },
-        { k: 'special', l: '特殊', icon: '⭐' },
+        { k: 'all',   l: '全部', icon: '🎒' },
+        { k: 'food',  l: '食物', icon: '🍎' },
+        { k: 'clean', l: '清洁', icon: '🛁' },
+        { k: 'toy',   l: '玩具', icon: '⚽' },
+        { k: 'heal',  l: '医疗', icon: '💊' },
       ];
     },
   },
   methods: {
-    useItemDirect(item) {
+    async useItemDirect(item) {
       if (!item.owned) return;
-      const result = Store.useItem(this.student.id, item.id);
+      const result = await Store.useItem(this.student.id, item.id);
       if (result.success) {
-        this.$emit('toast', `使用了 ${item.emoji}${item.name}！`, 'success');
+        let msg = `使用了 ${item.emoji}${item.name}！`;
+        if (result.expMsg) msg += ' ' + result.expMsg;
+        this.$emit('toast', msg, 'success');
         this.$emit('update');
         if (result.levelUp) {
           this.$emit('toast', `🎉 宠物升级了！Lv.${result.newStage}`, 'success');
@@ -1035,6 +1082,36 @@ const StudentHomePage = {
       if (h < 18) return '下午好！';
       return '晚上好！';
     },
+    currentStudent() { return this.student; },
+    statusBars() {
+      const s = this.student.petStatus || {};
+      return [
+        { key: 'health', icon: '❤️',  label: '生命', value: s.health || 0, cls: 'progress-health' },
+        { key: 'hungry', icon: '🍗',  label: '饱食', value: s.hungry || 0, cls: 'progress-hungry' },
+        { key: 'happy',  icon: '😊',  label: '心情', value: s.happy  || 0, cls: 'progress-happy'  },
+        { key: 'clean',  icon: '🛁',  label: '清洁', value: s.clean  || 0, cls: 'progress-clean'  },
+      ];
+    },
+    // 首页只展示最严重的一条状态警告
+    homeStatusWarning() {
+      const s = this.student.petStatus || {};
+      const hungry = s.hungry || 0;
+      const clean  = s.clean  || 0;
+      const health = s.health || 0;
+      if (health <= 30)  return { icon: '🚨', msg: `生命值只剩 ${health}！快去照顾宠物！`, urgent: true };
+      if (hungry <= 20)  return { icon: '😭', msg: `宠物快饿坏了（饱食度 ${hungry}），健康正在下降！`, urgent: true };
+      if (clean  <= 20)  return { icon: '🧹', msg: `宠物太脏了（清洁度 ${clean}），健康正在下降！`, urgent: true };
+      if (hungry <= 40)  return { icon: '😟', msg: `宠物有点饿了（饱食度 ${hungry}），去喂食吧！`, urgent: false };
+      if (clean  <= 40)  return { icon: '🛁', msg: `宠物有点脏了（清洁度 ${clean}），记得洗澡哦！`, urgent: false };
+      return null;
+    },
+  },
+  methods: {
+    getStatusColor(value) {
+      if (value >= 70) return '#4CAF50';
+      if (value >= 40) return '#FF9800';
+      return '#F44336';
+    },
   },
   template: `
     <div class="animate-pageIn">
@@ -1073,6 +1150,20 @@ const StudentHomePage = {
             <div style="font-size:10px;color:var(--text-light)">{{ bar.label }}</div>
           </div>
         </div>
+        <!-- 首页状态警告（有低指标时显示） -->
+        <div v-if="!student.petDead && homeStatusWarning"
+             :style="{
+               marginTop:'10px',
+               background: homeStatusWarning.urgent ? '#FFF3E0' : '#FFFDE7',
+               border: '1.5px solid ' + (homeStatusWarning.urgent ? '#FF9800' : '#FFD54F'),
+               borderRadius:'8px', padding:'7px 12px',
+               fontSize:'12px',
+               color: homeStatusWarning.urgent ? '#E65100' : '#F57C00',
+               display:'flex', alignItems:'center', gap:'6px'
+             }">
+          <span>{{ homeStatusWarning.icon }}</span>
+          <span>{{ homeStatusWarning.msg }}</span>
+        </div>
       </div>
 
       <!-- 今日任务 -->
@@ -1103,7 +1194,7 @@ const StudentHomePage = {
         <div class="card" style="padding:16px;cursor:pointer;text-align:center;" @click="$emit('nav','task')">
           <div style="font-size:36px;">📋</div>
           <div style="font-weight:700;margin-top:6px;">完成任务</div>
-          <div style="font-size:12px;color:var(--text-light)">获取积分让宠物成长</div>
+          <div style="font-size:12px;color:var(--text-light)">获取积分购买道具养宠物</div>
         </div>
         <div class="card" style="padding:16px;cursor:pointer;text-align:center;" @click="$emit('nav','rank')">
           <div style="font-size:36px;">🏆</div>
@@ -1151,11 +1242,24 @@ const StudentHomePage = {
     statusBars() {
       const s = this.student.petStatus || {};
       return [
-        { key:'health', icon:'❤️',  label:'生命', value: s.health||0 },
-        { key:'hungry', icon:'🍗',  label:'饱食', value: s.hungry||0 },
-        { key:'happy',  icon:'😊',  label:'心情', value: s.happy||0  },
-        { key:'clean',  icon:'🛁',  label:'清洁', value: s.clean||0  },
+        { key: 'health', icon: '❤️',  label: '生命', value: s.health || 0, cls: 'progress-health' },
+        { key: 'hungry', icon: '🍗',  label: '饱食', value: s.hungry || 0, cls: 'progress-hungry' },
+        { key: 'happy',  icon: '😊',  label: '心情', value: s.happy  || 0, cls: 'progress-happy'  },
+        { key: 'clean',  icon: '🛁',  label: '清洁', value: s.clean  || 0, cls: 'progress-clean'  },
       ];
+    },
+    // 首页只展示最严重的一条状态警告
+    homeStatusWarning() {
+      const s = this.student.petStatus || {};
+      const hungry = s.hungry || 0;
+      const clean  = s.clean  || 0;
+      const health = s.health || 0;
+      if (health <= 30)  return { icon: '🚨', msg: `生命值只剩 ${health}！快去照顾宠物！`, urgent: true };
+      if (hungry <= 20)  return { icon: '😭', msg: `宠物快饿坏了（饱食度 ${hungry}），健康正在下降！`, urgent: true };
+      if (clean  <= 20)  return { icon: '🧹', msg: `宠物太脏了（清洁度 ${clean}），健康正在下降！`, urgent: true };
+      if (hungry <= 40)  return { icon: '😟', msg: `宠物有点饿了（饱食度 ${hungry}），去喂食吧！`, urgent: false };
+      if (clean  <= 40)  return { icon: '🛁', msg: `宠物有点脏了（清洁度 ${clean}），记得洗澡哦！`, urgent: false };
+      return null;
     },
   },
   methods: {
@@ -1184,9 +1288,10 @@ const StudentApp = {
       pointsNotifyData: null,     // { delta, reason, total }
       showGlobalPointsDetail: false,  // 全局积分明细弹窗（从主页快捷入口打开）
       showPetDeadNotify: false,       // 宠物死亡通知弹窗
-      petDeadInfo: null,              // { daysMissed, lostPoints }
+      petDeadInfo: null,              // { hoursMissed, pointLost }
       showPenaltyNotify: false,       // 离线惩罚通知弹窗
-      penaltyInfo: null,              // { daysMissed, expPenalty, hpPenalty }
+      penaltyInfo: null,              // { daysMissed, pointPenalty, newPoints }
+      pointsWatchTimer: null,         // 积分监听定时器
     };
   },
   computed: {
@@ -1238,7 +1343,7 @@ const StudentApp = {
     setTimeout(() => this.runDailyPenaltyCheck(), 500);
   },
   beforeUnmount() {
-    if (this.tickInterval) clearInterval(this.tickInterval);
+    if (this.tickInterval) clearTimeout(this.tickInterval);   // tick 用 setTimeout，用 clearTimeout 清除
     if (this.pointsWatchTimer) clearInterval(this.pointsWatchTimer);
   },
   template: `
@@ -1315,11 +1420,13 @@ const StudentApp = {
            @click.self="showPetDeadNotify=false">
         <div class="modal-box" style="text-align:center;max-width:320px;padding:32px 24px;">
           <div style="font-size:64px;margin-bottom:8px;animation:petFloat 2s ease-in-out infinite;">🥚</div>
-          <div style="font-size:20px;font-weight:900;color:#E53935;margin-bottom:8px;">宠物离开了...</div>
+          <div style="font-size:20px;font-weight:900;color:#E53935;margin-bottom:8px;">宠物饿死了...</div>
           <div style="font-size:14px;color:var(--text-mid);line-height:1.6;margin-bottom:12px;">
-            已经 <strong>{{ petDeadInfo && petDeadInfo.daysMissed }} 天</strong> 没有喂食了<br>
-            宠物回归成了一颗蛋 😢<br>
-            <span style="color:#F44336;">你的积分全部清零了</span>
+            超过 <strong>7天</strong> 没有喂食了<br>
+            宠物饿死，变回了一颗蛋 😢<br>
+            <span v-if="petDeadInfo && petDeadInfo.pointLost > 0" style="color:#F44336;">
+              你损失了 {{ petDeadInfo.pointLost }} 积分（全部清零）
+            </span>
           </div>
           <div style="background:#FFF3E0;border-radius:12px;padding:12px;margin-bottom:16px;font-size:13px;color:#E65100;">
             💡 每天用食物道具喂食它，累计喂 <strong>3 次</strong>就能重新孵化！
@@ -1330,7 +1437,7 @@ const StudentApp = {
         </div>
       </div>
 
-      <!-- ⚠️ 离线惩罚通知（未死亡） -->
+      <!-- ⚠️ 离线惩罚通知（未死亡，积分扣减） -->
       <transition name="slide-up">
         <div v-if="showPenaltyNotify && penaltyInfo" class="points-notify-popup"
              style="background:linear-gradient(135deg,#FF6F00,#E65100);"
@@ -1338,11 +1445,11 @@ const StudentApp = {
           <div class="points-notify-inner">
             <div style="font-size:36px;margin-bottom:4px;">⚠️</div>
             <div style="font-size:16px;font-weight:900;color:white;margin-bottom:4px;">
-              宠物饿了 {{ penaltyInfo.daysMissed }} 天
+              宠物 {{ penaltyInfo.daysMissed }} 天没吃饭！
             </div>
             <div style="font-size:13px;color:rgba(255,255,255,0.9);line-height:1.6;">
-              经验 -{{ penaltyInfo.expPenalty }}  生命 -{{ penaltyInfo.hpPenalty }}<br>
-              快去喂食，别让它饿坏了！
+              <span v-if="penaltyInfo.pointPenalty > 0">积分 -{{ penaltyInfo.pointPenalty }}（当前 {{ penaltyInfo.newPoints }} 分）</span><br>
+              快去喂食，再不喂宠物会饿死！
             </div>
             <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:8px;">点击关闭</div>
           </div>
@@ -1454,34 +1561,51 @@ const StudentApp = {
       this.$emit('logout');
     },
     startTick() {
-      this.tickInterval = setInterval(async () => {
-        if (this.student && this.student.petType) {
-          await Store.tickPetStatus(this.student.id);
-          await this.refreshStudent();
-        }
-      }, 30000);
+      // 用递归 setTimeout + 随机间隔替代 setInterval，让宠物状态变化时间不可预测
+      // 间隔范围：45 ~ 90 分钟随机（平均约 67 分钟）
+      const scheduleNextTick = () => {
+        const minMs = 45 * 60 * 1000;   // 45 分钟
+        const maxMs = 90 * 60 * 1000;   // 90 分钟
+        const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+        this.tickInterval = setTimeout(async () => {
+          if (this.student && this.student.petType && !this.student.petDead) {
+            try {
+              const result = await Store.tickPetStatus(this.student.id);
+              await this.refreshStudent();
+              if (result && result.sick) {
+                Store.toast('🤒 宠物状态不好，记得照顾它！', 'warning');
+              }
+            } catch(e) {
+              console.warn('[tick] 请求失败:', e);
+            }
+          }
+          scheduleNextTick();  // 无论成功与否，继续安排下一次
+        }, delay);
+      };
+      scheduleNextTick();
     },
-    // 每次登录检测离线惩罚
+    // 每次登录检测离线惩罚（积分扣减阶梯制）
     async runDailyPenaltyCheck() {
       if (!this.student || !this.student.petType) return;
       const result = await Store.checkDailyPenalty(this.student.id);
       await this.refreshStudent();
       if (!result) return;
       if (result.died) {
+        // 宠物饿死：显示死亡通知
         this.petDeadInfo = {
-          daysMissed: result.daysMissed,
-          expPenalty: result.expPenalty,
-          hpPenalty: result.hpPenalty,
+          hoursMissed: result.hoursMissed,
+          pointLost:   result.pointLost || 0,
         };
         this.showPetDeadNotify = true;
-      } else if (result.daysMissed > 0) {
+      } else if (result.hoursMissed >= 24) {
+        // 有积分惩罚：显示警告通知
         this.penaltyInfo = {
-          daysMissed: result.daysMissed,
-          expPenalty: result.expPenalty,
-          hpPenalty: result.hpPenalty,
+          daysMissed:   result.daysMissed,
+          pointPenalty: result.pointPenalty,
+          newPoints:    result.newPoints,
         };
         this.showPenaltyNotify = true;
-        setTimeout(() => { this.showPenaltyNotify = false; }, 6000);
+        setTimeout(() => { this.showPenaltyNotify = false; }, 8000);
       }
     },
     // 监听积分变化：每3秒从服务器拉一次最新学生数据，检测变化

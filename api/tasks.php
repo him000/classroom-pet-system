@@ -126,28 +126,25 @@ if ($action === 'review') {
         $pdo->prepare("UPDATE task_submissions SET status='completed',reviewed_at=? WHERE task_id=? AND student_id=?")
             ->execute([$now, $taskId, $studentId]);
 
-        // 给学生加积分
+        // 给学生加积分（积分与宠物经验完全解耦，不再给宠物加经验）
         $pts = (int)$taskRow['points'];
         $student = $pdo->prepare("SELECT * FROM students WHERE id=?");
         $student->execute([$studentId]);
         $s = $student->fetch();
         if (!$s) respErr('学生不存在');
 
-        $newPoints   = (int)$s['points'] + $pts;
-        $addExp      = round($pts * 0.5);
-        $newPetExp   = (int)$s['pet_exp'] + $addExp;
-        $newPetStage = getPetLevel($newPetExp);
-        $reason      = "完成任务「{$taskRow['title']}」";
-        $icon        = $taskRow['icon'] ?: '📝';
+        $newPoints = (int)$s['points'] + $pts;
+        $reason    = "完成任务「{$taskRow['title']}」";
+        $icon      = $taskRow['icon'] ?: '📝';
 
-        // 更新积分日志
+        // 更新积分日志（只改积分，不动宠物经验）
         $log = $s['points_log'] ? json_decode($s['points_log'], true) : [];
         $log[] = ['icon'=>$icon,'label'=>$reason,'delta'=>$pts,'time'=>date('Y-m-d H:i'),'total'=>$newPoints];
 
-        $pdo->prepare("UPDATE students SET points=?,pet_exp=?,pet_stage=?,points_log=?,last_grant_reason=? WHERE id=?")
-            ->execute([$newPoints, $newPetExp, $newPetStage, json_encode($log, JSON_UNESCAPED_UNICODE), $reason, $studentId]);
+        $pdo->prepare("UPDATE students SET points=?,points_log=?,last_grant_reason=? WHERE id=?")
+            ->execute([$newPoints, json_encode($log, JSON_UNESCAPED_UNICODE), $reason, $studentId]);
 
-        respOk(['newPoints'=>$newPoints,'newPetExp'=>$newPetExp,'newPetStage'=>$newPetStage,'levelUp'=>($newPetStage > (int)$s['pet_stage'])]);
+        respOk(['newPoints'=>$newPoints,'levelUp'=>false]);
     } else {
         // 拒绝
         $pdo->prepare("UPDATE task_submissions SET status='rejected',reviewed_at=? WHERE task_id=? AND student_id=?")

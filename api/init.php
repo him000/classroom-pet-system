@@ -31,6 +31,8 @@ $tables[] = "CREATE TABLE IF NOT EXISTS `students` (
   `last_fed_at`  BIGINT       DEFAULT NULL COMMENT 'Unix毫秒时间戳',
   `last_grant_reason` VARCHAR(200) DEFAULT NULL,
   `buy_deduct`   INT          NOT NULL DEFAULT 0,
+  `daily_exp_date`   VARCHAR(20)  DEFAULT NULL COMMENT '当日日期 Y-m-d',
+  `daily_exp_earned` INT          NOT NULL DEFAULT 0 COMMENT '当日已获经验',
   `join_date`    VARCHAR(20)  DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
@@ -103,10 +105,10 @@ foreach ($tables as $sql) {
 $count = $pdo->query("SELECT COUNT(*) FROM students")->fetchColumn();
 if ($count == 0) {
     $initialStudents = [
-        [1, '小明', 'xiaoming', '123456', '三年一班', 320, 'dragon', '小火龙', 220, 2, '{"health":75,"hungry":60,"happy":80,"clean":70}', '{"apple":3,"cake":1,"soap":2,"ball":1,"medicine":1,"star":2}', '2026-02-01'],
-        [2, '小红', 'xiaohong', '123456', '三年一班', 580, 'cat',    '星星猫', 530, 3, '{"health":90,"hungry":70,"happy":95,"clean":85}', '{"apple":5,"cake":2,"soap":3,"ball":2,"medicine":0,"star":3,"rainbow":1}', '2026-02-01'],
+        [1, '小明', 'xiaoming', '123456', '三年一班', 320, 'dragon', '小火龙', 220, 2, '{"health":75,"hungry":60,"happy":80,"clean":70}', '{"apple":3,"cake":1,"soap":2,"ball":1,"medicine":1}', '2026-02-01'],
+        [2, '小红', 'xiaohong', '123456', '三年一班', 580, 'cat',    '星星猫', 530, 3, '{"health":90,"hungry":70,"happy":95,"clean":85}', '{"apple":5,"cake":2,"soap":3,"ball":2,"medicine":0}', '2026-02-01'],
         [3, '小刚', 'xiaogang', '123456', '三年一班', 180, 'bunny',  '棉花兔', 150, 1, '{"health":55,"hungry":30,"happy":40,"clean":50}', '{"apple":1,"soap":1,"medicine":2}', '2026-02-01'],
-        [4, '小美', 'xiaomei',  '123456', '三年一班', 440, 'fairy',  '梦精灵', 420, 2, '{"health":85,"hungry":65,"happy":88,"clean":92}', '{"apple":4,"cake":1,"soap":2,"yarn":2,"star":1}', '2026-02-01'],
+        [4, '小美', 'xiaomei',  '123456', '三年一班', 440, 'fairy',  '梦精灵', 420, 2, '{"health":85,"hungry":65,"happy":88,"clean":92}', '{"apple":4,"cake":1,"soap":2,"yarn":2}', '2026-02-01'],
         [5, '小强', 'xiaoqiang','123456', '三年一班', 260, 'bird',   '彩翼鸟', 250, 2, '{"health":70,"hungry":55,"happy":65,"clean":75}', '{"apple":2,"soap":1,"ball":3,"medicine":1}', '2026-02-01'],
         [6, '小丽', 'xiaoli',   '123456', '三年一班', 150, 'dog',    '旺财狗', 100, 1, '{"health":60,"hungry":40,"happy":55,"clean":45}', '{"apple":2,"medicine":1}', '2026-02-01'],
     ];

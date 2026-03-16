@@ -12,11 +12,16 @@ const PET_TYPES = [
   { id: 'fairy',  name: '梦精灵', emoji: '🧚', egg: '🥚', stages: ['🥚','🐣','🧚','✨','🌟','🎇','🌠'] },
 ];
 
+// 每日经验上限配置（宠物每天最多获得的经验值）
+// 设定为 50 exp/天，全程约 6 年（2190天）才能满级到 45000 exp
+// 每天喂食、洗澡、玩耍等护理行为才能累计经验，积分不再直接转化为经验
+const DAILY_EXP_LIMIT = 50;
+
 // 宠物成长阶段（共20级，设计为小学6年可持续成长）
 // 经验需求说明：
-//   任务每次约+15~30 exp（积分*0.5）
-//   每天完成2~3个任务 ≈ +40 exp/天
-//   每级所需天数约 3~14 天，全程约 6 年
+//   宠物每天最多获得 50 exp（通过喂食/洗澡/玩耍等护理行为积累）
+//   全程约 6 年（45000 exp ÷ 50 exp/天 ≈ 900天，约2.5学年）
+//   注意：积分仅用于购买道具，不能直接转化为宠物经验
 const GROWTH_STAGES = [
   { level:  0, name: '蛋',      minExp: 0,     maxExp: 100   },
   { level:  1, name: '刚出壳',  minExp: 100,   maxExp: 300   },
@@ -64,8 +69,6 @@ const ITEMS = [
   { id: 'yarn',      name: '毛线团', emoji: '🧶', type: 'toy',     effect: { happy: 35, hungry: -5 }, cost: 20, desc: '超级好玩的玩具！' },
   { id: 'medicine',  name: '急救药', emoji: '💊', type: 'heal',    effect: { health: 30 },            cost: 20, desc: '恢复健康度+30' },
   { id: 'potion',    name: '魔法药水',emoji: '🧪', type: 'heal',   effect: { health: 60, happy: 10 }, cost: 50, desc: '快速恢复所有状态' },
-  { id: 'star',      name: '星星糖', emoji: '⭐', type: 'special', effect: { exp: 30 },               cost: 40, desc: '直接获得经验值+30' },
-  { id: 'rainbow',   name: '彩虹糖', emoji: '🌈', type: 'special', effect: { exp: 80, happy: 30 },    cost: 100,desc: '超级成长，经验+80！' },
 ];
 
 // 任务模板
@@ -82,10 +85,10 @@ const TASK_TEMPLATES = [
 
 // 初始学生数据
 const INITIAL_STUDENTS = [
-  { id: 1, name: '小明', username: 'xiaoming', password: '123456', role: 'student', class: '三年一班', points: 320, petType: 'dragon', petName: '小火龙', petExp: 220, petStage: 2, petStatus: { health: 75, hungry: 60, happy: 80, clean: 70 }, backpack: { apple:3, cake:1, soap:2, ball:1, medicine:1, star:2 }, joinDate: '2026-02-01' },
-  { id: 2, name: '小红', username: 'xiaohong', password: '123456', role: 'student', class: '三年一班', points: 580, petType: 'cat',    petName: '星星猫', petExp: 530, petStage: 3, petStatus: { health: 90, hungry: 70, happy: 95, clean: 85 }, backpack: { apple:5, cake:2, soap:3, ball:2, medicine:0, star:3, rainbow:1 }, joinDate: '2026-02-01' },
+  { id: 1, name: '小明', username: 'xiaoming', password: '123456', role: 'student', class: '三年一班', points: 320, petType: 'dragon', petName: '小火龙', petExp: 220, petStage: 2, petStatus: { health: 75, hungry: 60, happy: 80, clean: 70 }, backpack: { apple:3, cake:1, soap:2, ball:1, medicine:1 }, joinDate: '2026-02-01' },
+  { id: 2, name: '小红', username: 'xiaohong', password: '123456', role: 'student', class: '三年一班', points: 580, petType: 'cat',    petName: '星星猫', petExp: 530, petStage: 3, petStatus: { health: 90, hungry: 70, happy: 95, clean: 85 }, backpack: { apple:5, cake:2, soap:3, ball:2, medicine:0 }, joinDate: '2026-02-01' },
   { id: 3, name: '小刚', username: 'xiaogang', password: '123456', role: 'student', class: '三年一班', points: 180, petType: 'bunny',  petName: '棉花兔', petExp: 150, petStage: 1, petStatus: { health: 55, hungry: 30, happy: 40, clean: 50 }, backpack: { apple:1, soap:1, medicine:2 }, joinDate: '2026-02-01' },
-  { id: 4, name: '小美', username: 'xiaomei', password: '123456', role: 'student', class: '三年一班', points: 440, petType: 'fairy',  petName: '梦精灵', petExp: 420, petStage: 2, petStatus: { health: 85, hungry: 65, happy: 88, clean: 92 }, backpack: { apple:4, cake:1, soap:2, yarn:2, star:1 }, joinDate: '2026-02-01' },
+  { id: 4, name: '小美', username: 'xiaomei', password: '123456', role: 'student', class: '三年一班', points: 440, petType: 'fairy',  petName: '梦精灵', petExp: 420, petStage: 2, petStatus: { health: 85, hungry: 65, happy: 88, clean: 92 }, backpack: { apple:4, cake:1, soap:2, yarn:2 }, joinDate: '2026-02-01' },
   { id: 5, name: '小强', username: 'xiaoqiang', password: '123456', role: 'student', class: '三年一班', points: 260, petType: 'bird',   petName: '彩翼鸟', petExp: 250, petStage: 2, petStatus: { health: 70, hungry: 55, happy: 65, clean: 75 }, backpack: { apple:2, soap:1, ball:3, medicine:1 }, joinDate: '2026-02-01' },
   { id: 6, name: '小丽', username: 'xiaoli', password: '123456', role: 'student', class: '三年一班', points: 150, petType: 'dog',    petName: '旺财狗', petExp: 100, petStage: 1, petStatus: { health: 60, hungry: 40, happy: 55, clean: 45 }, backpack: { apple:2, medicine:1 }, joinDate: '2026-02-01' },
 ];
