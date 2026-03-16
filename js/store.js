@@ -362,7 +362,10 @@ const Store = {
 
   // ---- 扣除积分 ----
   async deductPoints(studentId, pts, reason) {
-    const res = await apiPost('students.php', { action: 'deductPoints', id: studentId, points: pts, reason });
+    const reasonStr = reason || `老师扣除了 ${pts} 积分`;
+    const student = this.state.students.find(s => s.id === studentId);
+    if (student) student._lastGrantReason = reasonStr;
+    const res = await apiPost('students.php', { action: 'deductPoints', id: studentId, points: pts, reason: reasonStr });
     if (res.success) {
       await this.refreshStudent(studentId);
       return { success: true, deducted: res.deducted };

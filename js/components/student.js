@@ -1456,22 +1456,25 @@ const StudentApp = {
         </div>
       </transition>
 
-      <!-- 积分到账弹窗 -->
+      <!-- 积分到账/扣除弹窗 -->
       <transition name="slide-up">
-        <div v-if="showPointsNotify && pointsNotifyData" class="points-notify-popup" @click="showPointsNotify=false">
+        <div v-if="showPointsNotify && pointsNotifyData" class="points-notify-popup"
+             @click="showPointsNotify=false">
           <div class="points-notify-inner">
             <div style="font-size:36px;margin-bottom:4px;">
               {{ pointsNotifyData.delta > 0 ? '🎉' : '😢' }}
             </div>
             <div style="font-size:18px;font-weight:900;color:var(--text-dark);margin-bottom:4px;">
-              {{ pointsNotifyData.delta > 0 ? '积分到账！' : '积分扣除！' }}
+              {{ pointsNotifyData.delta > 0 ? '积分到账！' : '积分被扣除！' }}
             </div>
             <div style="font-size:28px;font-weight:900;"
                  :style="{color: pointsNotifyData.delta > 0 ? '#FF9800' : '#F44336'}">
               {{ pointsNotifyData.delta > 0 ? '+' : '' }}{{ pointsNotifyData.delta }} 积分
             </div>
             <div style="font-size:13px;color:var(--text-mid);margin-top:6px;">
-              {{ pointsNotifyData.reason }}
+              {{ pointsNotifyData.delta < 0
+                ? (pointsNotifyData.reason || ('老师扣除了 ' + Math.abs(pointsNotifyData.delta) + ' 积分'))
+                : pointsNotifyData.reason }}
             </div>
             <div style="font-size:12px;color:var(--text-light);margin-top:4px;">
               当前总积分：⭐ {{ pointsNotifyData.total }}
@@ -1634,15 +1637,29 @@ const StudentApp = {
 
         if (delta !== 0) {
           const buyDeduct = raw._buyDeduct || 0;
-          if (buyDeduct > 0 && delta < 0) {
+          // 只有购买道具产生的精确扣分才跳过弹窗（金额必须完全匹配）
+          // 老师手动扣分不受 _buyDeduct 影响，必须弹窗通知
+          const isBuyDeduct = buyDeduct > 0 && delta === -buyDeduct;
+          if (isBuyDeduct) {
+            // 购买道具扣分：静默更新，消费完后清零标记
+            raw._buyDeduct = 0;
             this._lastPoints = newPts;
             const localRaw2 = Store.state.students.find(s => s.id === this.user.id);
             if (localRaw2) this.studentData = { ...localRaw2 };
           } else {
-            const reason = raw._lastGrantReason || (delta > 0 ? '老师给你发放了积分奖励！' : '老师扣除了你的积分');
+            // 老师奖励积分 / 老师扣除积分 / 离线惩罚扣分 → 都要弹窗通知
+            let reason;
+            if (delta > 0) {
+              reason = raw._lastGrantReason || '老师给你发放了积分奖励！';
+            } else {
+              reason = raw._lastGrantReason || '⚠️ 老师扣除了你的积分';
+            }
             this.pointsNotifyData = { delta, reason, total: newPts };
             this.showPointsNotify = true;
             this._lastPoints = newPts;
+            // 清零标记，防止残留影响下一次判断
+            raw._lastGrantReason = '';
+            raw._buyDeduct = 0;
             const localRaw3 = Store.state.students.find(s => s.id === this.user.id);
             if (localRaw3) this.studentData = { ...localRaw3 };
             setTimeout(() => { this.showPointsNotify = false; }, 5000);

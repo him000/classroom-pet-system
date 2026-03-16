@@ -116,7 +116,8 @@ if ($action === 'deductPoints') {
     $log       = $row['points_log'] ? json_decode($row['points_log'], true) : [];
     $log[]     = ['icon'=>'📉','label'=>$reason,'delta'=>-$deduct,'time'=>date('Y-m-d H:i'),'total'=>$newPoints];
 
-    $pdo->prepare("UPDATE students SET points=?,points_log=?,last_grant_reason=? WHERE id=?")
+    // 同时清零 buy_deduct，防止旧的购买累计值干扰学生端弹窗判断
+    $pdo->prepare("UPDATE students SET points=?,points_log=?,last_grant_reason=?,buy_deduct=0 WHERE id=?")
         ->execute([$newPoints, json_encode($log, JSON_UNESCAPED_UNICODE), $reason, $id]);
     respOk(['deducted'=>$deduct]);
 }
@@ -495,7 +496,7 @@ function addPointsDB($pdo, $studentId, $pts, $reason, $icon='⭐') {
     $log = $row['points_log'] ? json_decode($row['points_log'], true) : [];
     $log[] = ['icon'=>$icon,'label'=>$reason,'delta'=>$pts,'time'=>date('Y-m-d H:i'),'total'=>$newPoints];
 
-    $pdo->prepare("UPDATE students SET points=?,points_log=?,last_grant_reason=? WHERE id=?")
+    $pdo->prepare("UPDATE students SET points=?,points_log=?,last_grant_reason=?,buy_deduct=0 WHERE id=?")
         ->execute([$newPoints, json_encode($log, JSON_UNESCAPED_UNICODE), $reason, $studentId]);
 }
 
